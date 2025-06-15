@@ -66,6 +66,11 @@ namespace hypergraph_ordering
         SparseMatrix extractSubmatrix(const std::vector<Index> &vertices,
                                       std::unordered_map<Index, Index> &vertex_map) const;
         SparseMatrix upperTriangular() const;
+        void buildFromTriplets(const std::vector<std::tuple<Index, Index, double>> &triplets);
+        bool isSymmetric(double tolerance) const;
+        void getStatistics(Index &min_degree, Index &max_degree,
+                           double &avg_degree, double &std_degree) const;
+        std::vector<std::vector<double>> toDense() const;
 
         // Utility functions
         std::pair<std::vector<Index>, std::vector<Index>> getEdges() const;
@@ -236,6 +241,20 @@ namespace hypergraph_ordering
             const std::vector<Index> &vertices,
             Index depth) const;
 
+        VertexSeparatorResult decodeC2PartitionToVertexSeparator(
+            const SparseMatrix &matrix,
+            const std::vector<PartitionID> &partition,
+            const std::vector<Index> &edge_rows,
+            const std::vector<Index> &edge_cols) const;
+
+        VertexSeparatorResult decodeC3PartitionToVertexSeparator(
+            const SparseMatrix &matrix,
+            const std::vector<PartitionID> &partition) const;
+
+        bool validateVertexSeparator(
+            const SparseMatrix &matrix,
+            const VertexSeparatorResult &result) const;
+
         // KaHyPar interface
         kahypar_context_t *createKaHyParContext() const;
         void destroyKaHyParContext(kahypar_context_t *context) const;
@@ -306,7 +325,20 @@ namespace hypergraph_ordering
             const std::unordered_set<Index> &set2);
 
         // Validation helpers
-        bool isValidOrdering(const std::vector<Index> &ordering, Index matrix_size);
+        inline bool isValidOrdering(const std::vector<Index> &ordering, Index matrix_size)
+        {
+            if (ordering.size() != matrix_size)
+                return false;
+
+            std::vector<bool> seen(matrix_size, false);
+            for (Index v : ordering)
+            {
+                if (v >= matrix_size || seen[v])
+                    return false;
+                seen[v] = true;
+            }
+            return true;
+        }
         bool isValidPartition(const std::vector<PartitionID> &partition, PartitionID num_parts);
     }
 
