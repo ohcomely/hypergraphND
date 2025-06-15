@@ -48,15 +48,6 @@ int main(int argc, char *argv[])
         config.min_subproblem_size = 5; // Small for demo
         config.max_recursion_depth = 8;
 
-        // Test if KaHyPar config exists
-        // if (!utils::fileExists(config.kahypar_config_path))
-        // {
-        //     std::cout << "\n⚠️  KaHyPar config file not found: " << config.kahypar_config_path << std::endl;
-        //     std::cout << "Please provide a valid KaHyPar configuration file." << std::endl;
-        //     std::cout << "You can download example configs from KaHyPar repository." << std::endl;
-        //     return 1;
-        // }
-
         // Create ordering object
         std::cout << "\n=== Running Hypergraph Ordering ===" << std::endl;
         HypergraphOrdering ordering(config);
