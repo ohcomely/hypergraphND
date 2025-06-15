@@ -289,6 +289,23 @@ namespace hypergraph_ordering
             std::chrono::high_resolution_clock::time_point start_;
         };
 
+        struct PairHash
+        {
+            std::size_t operator()(const std::pair<Index, Index> &p) const
+            {
+                return std::hash<Index>()(p.first) ^ (std::hash<Index>()(p.second) << 1);
+            }
+        };
+        struct TriangleHash
+        {
+            std::size_t operator()(const std::array<Index, 3> &t) const
+            {
+                return std::hash<Index>()(t[0]) ^
+                       (std::hash<Index>()(t[1]) << 1) ^
+                       (std::hash<Index>()(t[2]) << 2);
+            }
+        };
+
         mutable Timer timer_;
     };
 

@@ -94,6 +94,10 @@ include_directories(include)
 set(SOURCES
     src/sparse_matrix.cpp
     src/hypergraph_ordering.cpp
+    src/hypergraph_construction.cpp
+    src/hypergraph_decode.cpp
+    src/partition.cpp
+    src/minimum_degree.cpp
 )
 
 # Create library
