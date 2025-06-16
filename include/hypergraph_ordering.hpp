@@ -167,6 +167,14 @@ namespace hypergraph_ordering
     public:
         // Constructor
         explicit HypergraphOrdering(const OrderingConfig &config = OrderingConfig{});
+        ~HypergraphOrdering();
+        // Disable copy constructor and assignment (due to KaHyPar context)
+        HypergraphOrdering(const HypergraphOrdering &) = delete;
+        HypergraphOrdering &operator=(const HypergraphOrdering &) = delete;
+
+        // Enable move constructor and assignment
+        HypergraphOrdering(HypergraphOrdering &&other) noexcept;
+        HypergraphOrdering &operator=(HypergraphOrdering &&other) noexcept;
 
         // Main interface
         std::vector<Index> orderMatrix(const SparseMatrix &matrix);
@@ -196,6 +204,8 @@ namespace hypergraph_ordering
         // Core algorithm components
         HypergraphData constructCliqueNodeHypergraph(const SparseMatrix &matrix) const;
         HypergraphData constructC2CliqueNodeHypergraph(const SparseMatrix &matrix) const;
+        HypergraphData constructC2CliqueNodeHypergraphParallel(
+            const SparseMatrix &matrix) const;
         HypergraphData constructC3CliqueNodeHypergraph(const SparseMatrix &matrix) const;
 
         std::vector<PartitionID> partitionHypergraph(const HypergraphData &hg) const;
@@ -230,6 +240,10 @@ namespace hypergraph_ordering
             const std::vector<std::unordered_set<Index>> &adj,
             const std::vector<bool> &eliminated,
             const std::vector<Index> &weight) const;
+
+        std::vector<Index> exactMinimumDegree(
+            const SparseMatrix &matrix,
+            const std::vector<Index> &vertices) const;
 
         // Helper functions
         std::vector<Index> remapVertices(
@@ -269,6 +283,14 @@ namespace hypergraph_ordering
         //     std::vector<SuiteSparse_long> &Ap,
         //     std::vector<SuiteSparse_long> &Ai) const;
 
+        // KaHyPar interface (now reuses context)
+        void initializeKaHyParContext();
+        void cleanupKaHyParContext();
+        bool isKaHyParContextValid() const;
+        void reinitializeKaHyParContext();
+
+        kahypar_context_t *kahypar_context_;
+
         // Configuration and state
         OrderingConfig config_;
         mutable Statistics stats_;
@@ -307,6 +329,199 @@ namespace hypergraph_ordering
         };
 
         mutable Timer timer_;
+
+        class EliminationGraph
+        {
+        private:
+            struct Vertex
+            {
+                std::unordered_set<Index> neighbors;
+                Index degree;
+                bool eliminated;
+
+                Vertex() : degree(0), eliminated(false) {}
+            };
+
+            std::vector<Vertex> vertices_;
+            Index n_;
+
+        public:
+            explicit EliminationGraph(Index n) : n_(n)
+            {
+                vertices_.resize(n);
+            }
+
+            void addEdge(Index u, Index v)
+            {
+                if (u != v && !vertices_[u].eliminated && !vertices_[v].eliminated)
+                {
+                    vertices_[u].neighbors.insert(v);
+                    vertices_[v].neighbors.insert(u);
+                }
+            }
+
+            void removeEdge(Index u, Index v)
+            {
+                vertices_[u].neighbors.erase(v);
+                vertices_[v].neighbors.erase(u);
+            }
+
+            void computeInitialDegrees()
+            {
+                for (Index i = 0; i < n_; ++i)
+                {
+                    vertices_[i].degree = vertices_[i].neighbors.size();
+                }
+            }
+
+            Index getDegree(Index v) const
+            {
+                return vertices_[v].degree;
+            }
+
+            bool isEliminated(Index v) const
+            {
+                return vertices_[v].eliminated;
+            }
+
+            Index findMinimumDegreeVertex() const
+            {
+                Index min_degree = std::numeric_limits<Index>::max();
+                Index min_vertex = 0;
+                bool found = false;
+
+                for (Index i = 0; i < n_; ++i)
+                {
+                    if (!vertices_[i].eliminated && vertices_[i].degree < min_degree)
+                    {
+                        min_degree = vertices_[i].degree;
+                        min_vertex = i;
+                        found = true;
+                    }
+                }
+
+                if (!found)
+                {
+                    throw std::runtime_error("No non-eliminated vertex found");
+                }
+
+                return min_vertex;
+            }
+
+            void eliminateVertex(Index pivot)
+            {
+                if (vertices_[pivot].eliminated)
+                {
+                    throw std::runtime_error("Vertex already eliminated");
+                }
+
+                // Get neighbors before elimination
+                std::vector<Index> neighbors(vertices_[pivot].neighbors.begin(),
+                                             vertices_[pivot].neighbors.end());
+
+                // Remove pivot from all neighbor lists
+                for (Index neighbor : neighbors)
+                {
+                    vertices_[neighbor].neighbors.erase(pivot);
+                }
+
+                // Create fill-in edges (clique among neighbors)
+                for (size_t i = 0; i < neighbors.size(); ++i)
+                {
+                    for (size_t j = i + 1; j < neighbors.size(); ++j)
+                    {
+                        Index u = neighbors[i];
+                        Index v = neighbors[j];
+
+                        if (!vertices_[u].eliminated && !vertices_[v].eliminated)
+                        {
+                            // Add fill-in edge if it doesn't exist
+                            if (vertices_[u].neighbors.find(v) == vertices_[u].neighbors.end())
+                            {
+                                addEdge(u, v);
+                            }
+                        }
+                    }
+                }
+
+                // Mark pivot as eliminated
+                vertices_[pivot].eliminated = true;
+                vertices_[pivot].neighbors.clear();
+                vertices_[pivot].degree = 0;
+
+                // Update degrees of affected vertices
+                std::unordered_set<Index> affected;
+                for (Index neighbor : neighbors)
+                {
+                    if (!vertices_[neighbor].eliminated)
+                    {
+                        affected.insert(neighbor);
+                        // Add all neighbors of this neighbor to affected set
+                        for (Index nn : vertices_[neighbor].neighbors)
+                        {
+                            if (!vertices_[nn].eliminated)
+                            {
+                                affected.insert(nn);
+                            }
+                        }
+                    }
+                }
+
+                // Recompute degrees for affected vertices
+                for (Index v : affected)
+                {
+                    if (!vertices_[v].eliminated)
+                    {
+                        Index new_degree = 0;
+                        for (Index neighbor : vertices_[v].neighbors)
+                        {
+                            if (!vertices_[neighbor].eliminated)
+                            {
+                                new_degree++;
+                            }
+                        }
+                        vertices_[v].degree = new_degree;
+                    }
+                }
+            }
+
+            // Debug method
+            void printGraph() const
+            {
+                for (Index i = 0; i < n_; ++i)
+                {
+                    if (!vertices_[i].eliminated)
+                    {
+                        std::cout << "Vertex " << i << " (degree " << vertices_[i].degree << "): ";
+                        for (Index neighbor : vertices_[i].neighbors)
+                        {
+                            if (!vertices_[neighbor].eliminated)
+                            {
+                                std::cout << neighbor << " ";
+                            }
+                        }
+                        std::cout << std::endl;
+                    }
+                }
+            }
+
+            // Get fill-in statistics
+            Index getTotalFillIn() const
+            {
+                Index original_edges = 0;
+                Index current_edges = 0;
+
+                for (Index i = 0; i < n_; ++i)
+                {
+                    if (!vertices_[i].eliminated)
+                    {
+                        current_edges += vertices_[i].neighbors.size();
+                    }
+                }
+
+                return (current_edges - original_edges) / 2; // Each edge counted twice
+            }
+        };
     };
 
     // Utility functions

@@ -2,38 +2,38 @@
 
 namespace hypergraph_ordering
 {
-    std::vector<Index> HypergraphOrdering::minimumDegreeOrdering(
-        const SparseMatrix &matrix,
-        const std::vector<Index> &vertices) const
-    {
+    // std::vector<Index> HypergraphOrdering::minimumDegreeOrdering(
+    //     const SparseMatrix &matrix,
+    //     const std::vector<Index> &vertices) const
+    // {
 
-        Timer timer;
+    //     Timer timer;
 
-        if (vertices.empty())
-        {
-            return {};
-        }
+    //     if (vertices.empty())
+    //     {
+    //         return {};
+    //     }
 
-        // For small problems, use simple minimum degree
-        if (vertices.size() <= 50)
-        {
-            auto result = simpleMinimumDegree(matrix, vertices);
-            stats_.minimum_degree_calls++;
-            return result;
-        }
+    //     // For small problems, use simple minimum degree
+    //     if (vertices.size() <= 50)
+    //     {
+    //         auto result = simpleMinimumDegree(matrix, vertices);
+    //         stats_.minimum_degree_calls++;
+    //         return result;
+    //     }
 
-        // For larger problems, use approximate minimum degree
-        auto result = approximateMinimumDegree(matrix, vertices);
-        stats_.minimum_degree_calls++;
+    //     // For larger problems, use approximate minimum degree
+    //     auto result = approximateMinimumDegree(matrix, vertices);
+    //     stats_.minimum_degree_calls++;
 
-        if (config_.verbose)
-        {
-            std::cout << "AMD ordering completed for " << vertices.size()
-                      << " vertices in " << timer.elapsed() << "s" << std::endl;
-        }
+    //     if (config_.verbose)
+    //     {
+    //         std::cout << "AMD ordering completed for " << vertices.size()
+    //                   << " vertices in " << timer.elapsed() << "s" << std::endl;
+    //     }
 
-        return result;
-    }
+    //     return result;
+    // }
 
     std::vector<Index> HypergraphOrdering::simpleMinimumDegree(
         const SparseMatrix &matrix,
@@ -317,6 +317,99 @@ namespace hypergraph_ordering
             }
         }
         return degree;
+    }
+    std::vector<Index> HypergraphOrdering::minimumDegreeOrdering(
+        const SparseMatrix &matrix,
+        const std::vector<Index> &vertices) const
+    {
+
+        Timer timer;
+
+        if (vertices.empty())
+        {
+            return {};
+        }
+
+        // Use exact minimum degree for all cases
+        auto result = exactMinimumDegree(matrix, vertices);
+        stats_.minimum_degree_calls++;
+
+        if (config_.verbose)
+        {
+            std::cout << "Exact minimum degree ordering completed for " << vertices.size()
+                      << " vertices in " << timer.elapsed() << "s" << std::endl;
+        }
+
+        return result;
+    }
+
+    std::vector<Index> HypergraphOrdering::exactMinimumDegree(
+        const SparseMatrix &matrix,
+        const std::vector<Index> &vertices) const
+    {
+
+        const Index n = vertices.size();
+        if (n <= 1)
+            return vertices;
+
+        if (config_.verbose && n > 1000)
+        {
+            std::cout << "Running exact minimum degree on " << n << " vertices..." << std::endl;
+        }
+
+        // Create vertex mapping for subproblem
+        std::unordered_map<Index, Index> global_to_local;
+        for (Index i = 0; i < n; ++i)
+        {
+            global_to_local[vertices[i]] = i;
+        }
+
+        // Build elimination graph structure
+        EliminationGraph graph(n);
+
+        // Initialize adjacency lists from matrix
+        for (Index i = 0; i < n; ++i)
+        {
+            Index global_i = vertices[i];
+
+            for (Index ptr = matrix.rowPtr()[global_i]; ptr < matrix.rowPtr()[global_i + 1]; ++ptr)
+            {
+                Index global_j = matrix.colInd()[ptr];
+
+                // Only include if both vertices are in our subset
+                auto it = global_to_local.find(global_j);
+                if (it != global_to_local.end() && it->second != i)
+                {
+                    Index local_j = it->second;
+                    graph.addEdge(i, local_j);
+                }
+            }
+        }
+
+        // Initialize degrees
+        graph.computeInitialDegrees();
+
+        // Main elimination loop
+        std::vector<Index> ordering;
+        ordering.reserve(n);
+
+        for (Index step = 0; step < n; ++step)
+        {
+            // Find vertex with minimum degree
+            Index min_vertex = graph.findMinimumDegreeVertex();
+
+            if (config_.verbose && n > 1000 && step % (n / 10) == 0)
+            {
+                std::cout << "  Step " << step << "/" << n << ", min degree: "
+                          << graph.getDegree(min_vertex) << std::endl;
+            }
+
+            // Eliminate the vertex
+            graph.eliminateVertex(min_vertex);
+            ordering.push_back(vertices[min_vertex]);
+        }
+
+        return ordering;
     }
 
 }

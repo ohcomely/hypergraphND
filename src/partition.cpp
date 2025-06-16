@@ -4,13 +4,15 @@ namespace hypergraph_ordering
 {
 
     HypergraphOrdering::HypergraphOrdering(const OrderingConfig &config)
-        : config_(config), stats_(), timer_()
+        : config_(config), stats_(), timer_(), kahypar_context_(nullptr)
     {
         // Validate the configuration
         if (!config.isValid())
         {
             throw std::invalid_argument("Invalid ordering configuration");
         }
+
+        initializeKaHyParContext();
 
         if (config_.verbose)
         {
@@ -21,6 +23,111 @@ namespace hypergraph_ordering
             std::cout << "  Min nodes for partitioning: " << config_.min_nodes_for_partitioning << std::endl;
             std::cout << "  Imbalance tolerance: " << config_.imbalance << std::endl;
             std::cout << "  KaHyPar config: " << config_.kahypar_config_path << std::endl;
+        }
+    }
+
+    HypergraphOrdering::~HypergraphOrdering()
+    {
+        cleanupKaHyParContext();
+    }
+
+    // Move constructor
+    HypergraphOrdering::HypergraphOrdering(HypergraphOrdering &&other) noexcept
+        : config_(std::move(other.config_)),
+          stats_(std::move(other.stats_)),
+          kahypar_context_(other.kahypar_context_)
+    {
+
+        // Take ownership of the context
+        other.kahypar_context_ = nullptr;
+    }
+
+    // Move assignment operator
+    HypergraphOrdering &HypergraphOrdering::operator=(HypergraphOrdering &&other) noexcept
+    {
+        if (this != &other)
+        {
+            // Clean up current context
+            cleanupKaHyParContext();
+
+            // Move data
+            config_ = std::move(other.config_);
+            stats_ = std::move(other.stats_);
+            kahypar_context_ = other.kahypar_context_;
+
+            // Take ownership
+            other.kahypar_context_ = nullptr;
+        }
+        return *this;
+    }
+
+    void HypergraphOrdering::initializeKaHyParContext()
+    {
+        if (kahypar_context_)
+        {
+            cleanupKaHyParContext();
+        }
+
+        // Create base context
+        kahypar_context_ = kahypar_context_new();
+        if (!kahypar_context_)
+        {
+            throw std::runtime_error("Failed to create KaHyPar context. "
+                                     "Check if libkahypar is properly installed.");
+        }
+
+        try
+        {
+            // Load configuration file if provided
+            if (!config_.kahypar_config_path.empty())
+            {
+                kahypar_configure_context_from_file(kahypar_context_, config_.kahypar_config_path.c_str());
+
+                if (config_.verbose)
+                {
+                    std::cout << "Loaded KaHyPar config from: " << config_.kahypar_config_path << std::endl;
+                }
+            }
+            else
+            {
+                if (config_.verbose)
+                {
+                    std::cout << "Warning: KaHyPar config file not found: "
+                              << config_.kahypar_config_path << std::endl;
+                    throw std::runtime_error("KaHyPar configuration file not found.");
+                }
+            }
+
+            // Set seed for reproducibility
+            kahypar_set_seed(kahypar_context_, 42);
+
+            // Suppress output if not in verbose mode
+            kahypar_supress_output(kahypar_context_, !config_.verbose);
+
+            if (config_.verbose)
+            {
+                std::cout << "KaHyPar context initialized and configured." << std::endl;
+            }
+        }
+        catch (const std::exception &e)
+        {
+            // Clean up context on error
+            cleanupKaHyParContext();
+            throw std::runtime_error(std::string("Failed to configure KaHyPar context: ") + e.what());
+        }
+    }
+
+    void HypergraphOrdering::cleanupKaHyParContext()
+    {
+        if (kahypar_context_)
+        {
+            kahypar_context_free(kahypar_context_);
+            kahypar_context_ = nullptr;
+
+            if (config_.verbose)
+            {
+                std::cout << "KaHyPar context cleaned up." << std::endl;
+            }
         }
     }
 
@@ -54,8 +161,8 @@ namespace hypergraph_ordering
     {
         Timer timer;
 
-        // Create KaHyPar context
-        kahypar_context_t *context = createKaHyParContext();
+        // // Create KaHyPar context
+        // kahypar_context_t *context = createKaHyParContext();
 
         try
         {
@@ -79,7 +186,7 @@ namespace hypergraph_ordering
                 hg.hyperedge_indices.data(), // hyperedge_indices
                 hg.hyperedges.data(),        // hyperedges
                 &objective,                  // objective
-                context,                     // kahypar_context
+                kahypar_context_,            // kahypar_context
                 partition.data()             // partition
             );
 
@@ -93,13 +200,13 @@ namespace hypergraph_ordering
                 std::cout << "  Time: " << timer.elapsed() << " seconds" << std::endl;
             }
 
-            destroyKaHyParContext(context);
+            // destroyKaHyParContext(context);
 
             return partition;
         }
         catch (const std::exception &e)
         {
-            destroyKaHyParContext(context);
+            // destroyKaHyParContext(context);
             throw std::runtime_error("Error during hypergraph partitioning: " + std::string(e.what()));
         }
     }

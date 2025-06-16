@@ -45,9 +45,12 @@ int main(int argc, char *argv[])
         OrderingConfig config;
         config.verbose = false;
         config.clique_type = OrderingConfig::C2_CLIQUES;
-        config.min_subproblem_size = 5; // Small for demo
-        config.max_recursion_depth = 8;
+        config.max_recursion_depth = 10;  // Allow deeper recursion
+        config.min_subproblem_size = 200; // Continue partitioning longer
+        // config.min_nodes_for_partitioning = 20; // Partition smaller subproblems
+        config.use_minimum_degree = true; // Use AMD for base cases
 
+        config.imbalance = 0.001; // Tight balance constraint (1%)
         // Create ordering object
         std::cout << "\n=== Running Hypergraph Ordering ===" << std::endl;
         HypergraphOrdering ordering(config);

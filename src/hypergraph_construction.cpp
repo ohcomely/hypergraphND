@@ -1,4 +1,7 @@
 #include "hypergraph_ordering.hpp"
+#include <unordered_map>
+#include <omp.h>
+#include <numeric>
 
 namespace hypergraph_ordering
 {
@@ -9,6 +12,7 @@ namespace hypergraph_ordering
         if (config_.clique_type == OrderingConfig::C2_CLIQUES)
         {
             auto result = constructC2CliqueNodeHypergraph(matrix);
+            // auto result = constructC2CliqueNodeHypergraphParallel(matrix);
             stats_.hypergraph_construction_time += timer.elapsed();
             return result;
         }
@@ -18,6 +22,143 @@ namespace hypergraph_ordering
             stats_.hypergraph_construction_time += timer.elapsed();
             return result;
         }
+    }
+
+    HypergraphData HypergraphOrdering::constructC2CliqueNodeHypergraphParallel(
+        const SparseMatrix &matrix) const
+    {
+
+        const Index n = matrix.rows();
+
+        // Step 1: Count edges per row in parallel
+        std::vector<Index> row_edge_counts(n, 0);
+
+#pragma omp parallel for
+        for (Index i = 0; i < n; ++i)
+        {
+            for (Index ptr = matrix.rowPtr()[i]; ptr < matrix.rowPtr()[i + 1]; ++ptr)
+            {
+                Index j = matrix.colInd()[ptr];
+                if (j > i)
+                {
+                    row_edge_counts[i]++;
+                }
+            }
+        }
+
+        // Step 2: Prefix sum for edge indexing
+        std::vector<Index> edge_offsets(n + 1, 0);
+        std::partial_sum(row_edge_counts.begin(), row_edge_counts.end(),
+                         edge_offsets.begin() + 1);
+
+        const Index total_edges = edge_offsets[n];
+
+        // Step 3: Parallel edge collection with pre-allocated memory
+        std::vector<std::pair<Index, Index>> edges(total_edges);
+
+#pragma omp parallel for
+        for (Index i = 0; i < n; ++i)
+        {
+            Index edge_idx = edge_offsets[i];
+            for (Index ptr = matrix.rowPtr()[i]; ptr < matrix.rowPtr()[i + 1]; ++ptr)
+            {
+                Index j = matrix.colInd()[ptr];
+                if (j > i)
+                {
+                    edges[edge_idx++] = {i, j};
+                }
+            }
+        }
+        const Index num_edges = edges.size();
+        if (num_edges == 0)
+        {
+            // Empty hypergraph
+            HypergraphData hg;
+            hg.num_nodes = 0;
+            hg.num_nets = 0;
+            hg.num_pins = 0;
+            return hg;
+        }
+
+        if (config_.verbose)
+        {
+            std::cout << "Found " << num_edges << " edges (hypergraph nodes)" << std::endl;
+        }
+
+        // Step 2: Build edge-to-node mapping
+        std::unordered_map<std::pair<Index, Index>, Index, PairHash> edge_to_node;
+        for (Index idx = 0; idx < num_edges; ++idx)
+        {
+            edge_to_node[edges[idx]] = idx;
+        }
+
+        // Step 3: Build nets for each vertex (collect edges incident to each vertex)
+        std::vector<std::vector<Index>> vertex_to_nets(n);
+        std::unordered_set<Index> vertices_with_edges;
+
+        for (Index edge_idx = 0; edge_idx < num_edges; ++edge_idx)
+        {
+            Index u = edges[edge_idx].first;
+            Index v = edges[edge_idx].second;
+
+            vertex_to_nets[u].push_back(edge_idx);
+            vertex_to_nets[v].push_back(edge_idx);
+            vertices_with_edges.insert(u);
+            vertices_with_edges.insert(v);
+        }
+
+        // Step 4: Create nets only for vertices that have edges
+        std::vector<Index> vertex_list(vertices_with_edges.begin(), vertices_with_edges.end());
+        std::sort(vertex_list.begin(), vertex_list.end());
+
+        const Index num_nets = vertex_list.size();
+
+        if (config_.verbose)
+        {
+            std::cout << "Creating " << num_nets << " nets (for vertices with edges)" << std::endl;
+        }
+
+        // Step 5: Build hypergraph in CSR format
+        HypergraphData hg;
+        hg.num_nodes = num_edges;
+        hg.num_nets = num_nets;
+        hg.num_pins = 0;
+
+        // Count pins first
+        for (Index vertex : vertex_list)
+        {
+            hg.num_pins += vertex_to_nets[vertex].size();
+        }
+
+        // Reserve memory
+        hg.hyperedge_indices.reserve(num_nets + 1);
+        hg.hyperedges.reserve(hg.num_pins);
+        hg.node_weights.assign(num_edges, 1); // Unit weights for edges
+        hg.net_weights.assign(num_nets, 1);   // Unit weights for nets
+
+        // Build CSR representation
+        hg.hyperedge_indices.push_back(0);
+
+        for (Index vertex : vertex_list)
+        {
+            // Add all edges incident to this vertex
+            for (Index edge_idx : vertex_to_nets[vertex])
+            {
+                hg.hyperedges.push_back(static_cast<kahypar_hyperedge_id_t>(edge_idx));
+            }
+            hg.hyperedge_indices.push_back(static_cast<HyperedgeIndex>(hg.hyperedges.size()));
+        }
+
+        if (config_.verbose)
+        {
+            std::cout << "C2 hypergraph constructed:" << std::endl;
+            std::cout << "  Nodes (edges): " << hg.num_nodes << std::endl;
+            std::cout << "  Nets (vertices): " << hg.num_nets << std::endl;
+            std::cout << "  Pins: " << hg.num_pins << std::endl;
+            std::cout << "  Density: " << (double)hg.num_pins / (hg.num_nodes * hg.num_nets) << std::endl;
+        }
+
+        return hg;
     }
 
     HypergraphData HypergraphOrdering::constructC2CliqueNodeHypergraph(const SparseMatrix &matrix) const
