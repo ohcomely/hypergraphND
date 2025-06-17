@@ -31,6 +31,220 @@ namespace hypergraph_ordering
         return true;
     }
 
+    // void HypergraphOrdering::recursiveNestedDissection(
+    //     const SparseMatrix &matrix,
+    //     const std::vector<Index> &vertices,
+    //     Index depth,
+    //     std::vector<Index> &ordering) const
+    // {
+
+    //     Timer timer;
+
+    //     if (config_.verbose && depth == 0)
+    //     {
+    //         std::cout << "Starting recursive nested dissection..." << std::endl;
+    //     }
+
+    //     const Index n = vertices.size();
+
+    //     // Update statistics
+    //     stats_.total_subproblems++;
+    //     if (depth > stats_.max_recursion_depth_reached)
+    //     {
+    //         stats_.max_recursion_depth_reached = depth;
+    //     }
+
+    //     if (config_.verbose)
+    //     {
+    //         std::cout << "Depth " << depth << ": Processing " << n
+    //                   << " vertices" << std::endl;
+    //     }
+
+    //     // Base case 1: Small subproblem - use minimum degree
+    //     if (shouldTerminate(matrix, vertices, depth))
+    //     {
+    //         if (config_.verbose)
+    //         {
+    //             std::cout << "Base case reached (size=" << n << ", depth=" << depth
+    //                       << "), using minimum degree ordering" << std::endl;
+    //         }
+
+    //         auto md_ordering = minimumDegreeOrdering(matrix, vertices);
+    //         ordering.insert(ordering.end(), md_ordering.begin(), md_ordering.end());
+    //         return;
+    //     }
+
+    //     // // Base case 2: Too few nodes for meaningful partitioning
+    //     // if (n < config_.min_nodes_for_partitioning)
+    //     // {
+    //     //     if (config_.verbose)
+    //     //     {
+    //     //         std::cout << "Too few vertices for partitioning, using minimum degree" << std::endl;
+    //     //     }
+
+    //     //     auto md_ordering = minimumDegreeOrdering(matrix, vertices);
+    //     //     ordering.insert(ordering.end(), md_ordering.begin(), md_ordering.end());
+    //     //     return;
+    //     // }
+
+    //     try
+    //     {
+    //         // Step 1: Extract submatrix for current vertices
+    //         std::unordered_map<Index, Index> vertex_map;
+    //         SparseMatrix submatrix;
+
+    //         if (n == matrix.rows())
+    //         {
+    //             // Working with full matrix
+    //             submatrix = matrix;
+    //             for (Index i = 0; i < n; ++i)
+    //             {
+    //                 vertex_map[vertices[i]] = i;
+    //             }
+    //         }
+    //         else
+    //         {
+    //             // Extract submatrix
+    //             submatrix = matrix.extractSubmatrix(vertices, vertex_map);
+    //         }
+
+    //         if (config_.verbose)
+    //         {
+    //             std::cout << "Submatrix extracted: " << submatrix.rows()
+    //                       << "x" << submatrix.cols() << ", nnz=" << submatrix.nnz() << std::endl;
+    //         }
+
+    //         // Step 2: Construct hypergraph for submatrix
+    //         auto hg_data = constructCliqueNodeHypergraph(submatrix);
+
+    //         if (hg_data.num_nodes == 0 || hg_data.num_nets == 0)
+    //         {
+    //             if (config_.verbose)
+    //             {
+    //                 std::cout << "Empty hypergraph, using minimum degree ordering" << std::endl;
+    //             }
+    //             auto md_ordering = minimumDegreeOrdering(matrix, vertices);
+    //             ordering.insert(ordering.end(), md_ordering.begin(), md_ordering.end());
+    //             return;
+    //         }
+
+    //         if (config_.verbose)
+    //         {
+    //             std::cout << "Hypergraph constructed: " << hg_data.num_nodes
+    //                       << " nodes, " << hg_data.num_nets << " nets" << std::endl;
+    //         }
+
+    //         // Step 3: Partition the hypergraph
+    //         auto partition = partitionHypergraph(hg_data);
+
+    //         // Step 4: Get edge information for decoding (C2 case)
+    //         std::vector<Index> edge_rows, edge_cols;
+    //         if (config_.clique_type == OrderingConfig::C2_CLIQUES)
+    //         {
+    //             auto upper_tri = submatrix.upperTriangular();
+
+    //             for (Index i = 0; i < submatrix.rows(); ++i)
+    //             {
+    //                 for (Index ptr = upper_tri.rowPtr()[i]; ptr < upper_tri.rowPtr()[i + 1]; ++ptr)
+    //                 {
+    //                     Index j = upper_tri.colInd()[ptr];
+    //                     if (j > i)
+    //                     {
+    //                         edge_rows.push_back(i);
+    //                         edge_cols.push_back(j);
+    //                     }
+    //                 }
+    //             }
+    //         }
+
+    //         // Step 5: Decode partition to vertex separator
+    //         auto separator_result = decodePartitionToVertexSeparator(
+    //             submatrix, partition, edge_rows, edge_cols);
+
+    //         // Step 6: Validate separator quality
+    //         // if (!validateVertexSeparator(submatrix, separator_result))
+    //         // {
+    //         //     if (config_.verbose)
+    //         //     {
+    //         //         std::cout << "Invalid separator, falling back to minimum degree" << std::endl;
+    //         //     }
+    //         //     auto md_ordering = minimumDegreeOrdering(matrix, vertices);
+    //         //     ordering.insert(ordering.end(), md_ordering.begin(), md_ordering.end());
+    //         //     return;
+    //         // }
+
+    //         // Step 7: Map separator result back to original vertex indices
+    //         std::vector<Index> orig_separator, orig_part1, orig_part2;
+
+    //         for (Index local_v : separator_result.separator)
+    //         {
+    //             orig_separator.push_back(vertices[local_v]);
+    //         }
+    //         for (Index local_v : separator_result.part1)
+    //         {
+    //             orig_part1.push_back(vertices[local_v]);
+    //         }
+    //         for (Index local_v : separator_result.part2)
+    //         {
+    //             orig_part2.push_back(vertices[local_v]);
+    //         }
+
+    //         if (config_.verbose)
+    //         {
+    //             std::cout << "Separator found: " << orig_separator.size()
+    //                       << " separator, " << orig_part1.size() << " + "
+    //                       << orig_part2.size() << " parts" << std::endl;
+    //         }
+
+    //         // Step 8: Check for degenerate partitions
+    //         if (orig_part1.empty() || orig_part2.empty())
+    //         {
+    //             if (config_.verbose)
+    //             {
+    //                 std::cout << "Degenerate partition, using minimum degree" << std::endl;
+    //             }
+    //             auto md_ordering = minimumDegreeOrdering(matrix, vertices);
+    //             ordering.insert(ordering.end(), md_ordering.begin(), md_ordering.end());
+    //             return;
+    //         }
+
+    //         // Step 9: Recursive calls on parts (nested dissection order)
+    //         if (!orig_part1.empty())
+    //         {
+    //             recursiveNestedDissection(matrix, orig_part1, depth + 1, ordering);
+    //         }
+
+    //         if (!orig_part2.empty())
+    //         {
+    //             recursiveNestedDissection(matrix, orig_part2, depth + 1, ordering);
+    //         }
+
+    //         // Step 10: Add separator vertices last (nested dissection property)
+    //         for (Index v : orig_separator)
+    //         {
+    //             ordering.push_back(v);
+    //         }
+
+    //         if (config_.verbose)
+    //         {
+    //             std::cout << "Depth " << depth << " completed in "
+    //                       << timer.elapsed() << "s" << std::endl;
+    //         }
+    //     }
+    //     catch (const std::exception &e)
+    //     {
+    //         if (config_.verbose)
+    //         {
+    //             std::cout << "Exception in nested dissection: " << e.what()
+    //                       << ", falling back to minimum degree" << std::endl;
+    //         }
+
+    //         // Fallback to minimum degree on any error
+    //         auto md_ordering = minimumDegreeOrdering(matrix, vertices);
+    //         ordering.insert(ordering.end(), md_ordering.begin(), md_ordering.end());
+    //     }
+    // }
+
     void HypergraphOrdering::recursiveNestedDissection(
         const SparseMatrix &matrix,
         const std::vector<Index> &vertices,
@@ -38,144 +252,43 @@ namespace hypergraph_ordering
         std::vector<Index> &ordering) const
     {
 
-        Timer timer;
-
-        if (config_.verbose && depth == 0)
-        {
-            std::cout << "Starting recursive nested dissection..." << std::endl;
-        }
-
         const Index n = vertices.size();
 
-        // Update statistics
-        stats_.total_subproblems++;
-        if (depth > stats_.max_recursion_depth_reached)
+        // Check termination with literature criteria
+        if (shouldTerminate(matrix, vertices, depth))
         {
-            stats_.max_recursion_depth_reached = depth;
-        }
-
-        if (config_.verbose)
-        {
-            std::cout << "Depth " << depth << ": Processing " << n
-                      << " vertices" << std::endl;
-        }
-
-        // Base case 1: Small subproblem - use minimum degree
-        if (n <= config_.min_subproblem_size || depth >= config_.max_recursion_depth)
-        {
-            if (config_.verbose)
-            {
-                std::cout << "Base case reached (size=" << n << ", depth=" << depth
-                          << "), using minimum degree ordering" << std::endl;
-            }
-
             auto md_ordering = minimumDegreeOrdering(matrix, vertices);
             ordering.insert(ordering.end(), md_ordering.begin(), md_ordering.end());
             return;
         }
 
-        // // Base case 2: Too few nodes for meaningful partitioning
-        // if (n < config_.min_nodes_for_partitioning)
-        // {
-        //     if (config_.verbose)
-        //     {
-        //         std::cout << "Too few vertices for partitioning, using minimum degree" << std::endl;
-        //     }
-
-        //     auto md_ordering = minimumDegreeOrdering(matrix, vertices);
-        //     ordering.insert(ordering.end(), md_ordering.begin(), md_ordering.end());
-        //     return;
-        // }
-
         try
         {
-            // Step 1: Extract submatrix for current vertices
+            // Extract submatrix and build hypergraph
             std::unordered_map<Index, Index> vertex_map;
-            SparseMatrix submatrix;
+            SparseMatrix submatrix = matrix.extractSubmatrix(vertices, vertex_map);
+            auto hg_data = constructC2CliqueNodeHypergraph(submatrix);
 
-            if (n == matrix.rows())
+            if (hg_data.num_nodes < 10)
             {
-                // Working with full matrix
-                submatrix = matrix;
-                for (Index i = 0; i < n; ++i)
-                {
-                    vertex_map[vertices[i]] = i;
-                }
-            }
-            else
-            {
-                // Extract submatrix
-                submatrix = matrix.extractSubmatrix(vertices, vertex_map);
-            }
-
-            if (config_.verbose)
-            {
-                std::cout << "Submatrix extracted: " << submatrix.rows()
-                          << "x" << submatrix.cols() << ", nnz=" << submatrix.nnz() << std::endl;
-            }
-
-            // Step 2: Construct hypergraph for submatrix
-            auto hg_data = constructCliqueNodeHypergraph(submatrix);
-
-            if (hg_data.num_nodes == 0 || hg_data.num_nets == 0)
-            {
-                if (config_.verbose)
-                {
-                    std::cout << "Empty hypergraph, using minimum degree ordering" << std::endl;
-                }
                 auto md_ordering = minimumDegreeOrdering(matrix, vertices);
                 ordering.insert(ordering.end(), md_ordering.begin(), md_ordering.end());
                 return;
             }
 
-            if (config_.verbose)
-            {
-                std::cout << "Hypergraph constructed: " << hg_data.num_nodes
-                          << " nodes, " << hg_data.num_nets << " nets" << std::endl;
-            }
-
-            // Step 3: Partition the hypergraph
+            // Partition and decode
             auto partition = partitionHypergraph(hg_data);
-
-            // Step 4: Get edge information for decoding (C2 case)
+            auto edges = extractEdgesFromSubmatrix(submatrix);
             std::vector<Index> edge_rows, edge_cols;
-            if (config_.clique_type == OrderingConfig::C2_CLIQUES)
+            for (const auto &edge : edges)
             {
-                auto upper_tri = submatrix.upperTriangular();
-
-                for (Index i = 0; i < submatrix.rows(); ++i)
-                {
-                    for (Index ptr = upper_tri.rowPtr()[i]; ptr < upper_tri.rowPtr()[i + 1]; ++ptr)
-                    {
-                        Index j = upper_tri.colInd()[ptr];
-                        if (j > i)
-                        {
-                            edge_rows.push_back(i);
-                            edge_cols.push_back(j);
-                        }
-                    }
-                }
+                edge_rows.push_back(edge.first);
+                edge_cols.push_back(edge.second);
             }
+            auto separator_result = decodeC2PartitionToVertexSeparator(submatrix, partition, edge_rows, edge_cols);
 
-            // Step 5: Decode partition to vertex separator
-            auto separator_result = decodePartitionToVertexSeparator(
-                submatrix, partition, edge_rows, edge_cols);
-
-            // Step 6: Validate separator quality
-            // if (!validateVertexSeparator(submatrix, separator_result))
-            // {
-            //     if (config_.verbose)
-            //     {
-            //         std::cout << "Invalid separator, falling back to minimum degree" << std::endl;
-            //     }
-            //     auto md_ordering = minimumDegreeOrdering(matrix, vertices);
-            //     ordering.insert(ordering.end(), md_ordering.begin(), md_ordering.end());
-            //     return;
-            // }
-
-            // Step 7: Map separator result back to original vertex indices
+            // Map back to original indices
             std::vector<Index> orig_separator, orig_part1, orig_part2;
-
             for (Index local_v : separator_result.separator)
             {
                 orig_separator.push_back(vertices[local_v]);
@@ -189,57 +302,34 @@ namespace hypergraph_ordering
                 orig_part2.push_back(vertices[local_v]);
             }
 
-            if (config_.verbose)
+            // Check for degenerate partitions
+            if (orig_part1.empty() || orig_part2.empty() ||
+                (orig_part1.size() + orig_part2.size()) < n * 0.8)
             {
-                std::cout << "Separator found: " << orig_separator.size()
-                          << " separator, " << orig_part1.size() << " + "
-                          << orig_part2.size() << " parts" << std::endl;
-            }
-
-            // Step 8: Check for degenerate partitions
-            if (orig_part1.empty() || orig_part2.empty())
-            {
-                if (config_.verbose)
-                {
-                    std::cout << "Degenerate partition, using minimum degree" << std::endl;
-                }
                 auto md_ordering = minimumDegreeOrdering(matrix, vertices);
                 ordering.insert(ordering.end(), md_ordering.begin(), md_ordering.end());
                 return;
             }
 
-            // Step 9: Recursive calls on parts (nested dissection order)
+            // Recursive calls - CORRECT ORDER: parts first, then separator
             if (!orig_part1.empty())
             {
                 recursiveNestedDissection(matrix, orig_part1, depth + 1, ordering);
             }
-
             if (!orig_part2.empty())
             {
                 recursiveNestedDissection(matrix, orig_part2, depth + 1, ordering);
             }
 
-            // Step 10: Add separator vertices last (nested dissection property)
+            // Add separator vertices LAST (this is the key for nested dissection)
             for (Index v : orig_separator)
             {
                 ordering.push_back(v);
             }
-
-            if (config_.verbose)
-            {
-                std::cout << "Depth " << depth << " completed in "
-                          << timer.elapsed() << "s" << std::endl;
-            }
         }
         catch (const std::exception &e)
         {
-            if (config_.verbose)
-            {
-                std::cout << "Exception in nested dissection: " << e.what()
-                          << ", falling back to minimum degree" << std::endl;
-            }
-
-            // Fallback to minimum degree on any error
+            // Fallback to minimum degree
             auto md_ordering = minimumDegreeOrdering(matrix, vertices);
             ordering.insert(ordering.end(), md_ordering.begin(), md_ordering.end());
         }
@@ -386,5 +476,95 @@ namespace hypergraph_ordering
         }
 
         return true;
+    }
+
+    bool HypergraphOrdering::shouldTerminate(const SparseMatrix &matrix, const std::vector<Index> &vertices,
+                                             Index depth) const
+    {
+        const Index n = vertices.size();
+
+        // Original paper: continue until internal nets < 200 OR nodes < 100
+        if (n < 100)
+        {
+            return true;
+        }
+
+        // Count internal nets (edges within the subproblem)
+        Index internal_nets = 0;
+        std::unordered_set<Index> vertex_set(vertices.begin(), vertices.end());
+
+        for (Index v : vertices)
+        {
+            for (Index ptr = matrix.rowPtr()[v]; ptr < matrix.rowPtr()[v + 1]; ++ptr)
+            {
+                Index neighbor = matrix.colInd()[ptr];
+                if (neighbor > v && vertex_set.count(neighbor))
+                {
+                    internal_nets++;
+                }
+            }
+        }
+
+        if (internal_nets < 200)
+        {
+            return true;
+        }
+
+        // // Also check depth as safety
+        // if (depth >= config_.max_recursion_depth)
+        // {
+        //     return true;
+        // }
+
+        return false;
+    }
+
+    std::vector<std::pair<Index, Index>> HypergraphOrdering::extractEdgesFromSubmatrix(
+        const SparseMatrix &matrix) const
+    {
+        std::vector<std::pair<Index, Index>> edges;
+        std::unordered_set<std::pair<Index, Index>, PairHash> edge_set;
+
+        const Index n = matrix.rows();
+
+        if (config_.verbose && n > 1000)
+        {
+            std::cout << "Extracting edges from " << n << "x" << n << " submatrix..." << std::endl;
+        }
+
+        // Extract all unique edges from the matrix
+        // We need to handle both upper and lower triangular parts to ensure
+        // we get all edges, then deduplicate them
+
+        for (Index i = 0; i < n; ++i)
+        {
+            for (Index ptr = matrix.rowPtr()[i]; ptr < matrix.rowPtr()[i + 1]; ++ptr)
+            {
+                Index j = matrix.colInd()[ptr];
+
+                // Skip diagonal entries (self-loops)
+                if (i == j)
+                    continue;
+
+                // Create canonical edge representation (smaller index first)
+                std::pair<Index, Index> edge = {std::min(i, j), std::max(i, j)};
+
+                // Insert into set to avoid duplicates
+                if (edge_set.insert(edge).second)
+                {
+                    edges.push_back(edge);
+                }
+            }
+        }
+
+        // Sort edges for consistency (optional but helpful for debugging)
+        std::sort(edges.begin(), edges.end());
+
+        if (config_.verbose && n > 1000)
+        {
+            std::cout << "Extracted " << edges.size() << " unique edges" << std::endl;
+        }
+
+        return edges;
     }
 }

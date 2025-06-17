@@ -136,7 +136,7 @@ namespace hypergraph_ordering
      */
     struct OrderingConfig
     {
-        std::string kahypar_config_path = "km1_kKaHyPar_sea20.ini";
+        std::string kahypar_config_path = "../cut_kKaHyPar_sea20.ini";
         Index max_recursion_depth = 10;
         Index min_subproblem_size = 200;
         Index min_nodes_for_partitioning = 100;
@@ -152,7 +152,7 @@ namespace hypergraph_ordering
         CliqueType clique_type = C2_CLIQUES;
 
         // KaHyPar specific settings
-        double imbalance = 0.03;
+        double imbalance = 0.005;
         PartitionID num_blocks = 2;
 
         bool isValid() const;
@@ -221,6 +221,12 @@ namespace hypergraph_ordering
             const std::vector<Index> &vertices,
             Index depth,
             std::vector<Index> &ordering) const;
+
+        bool shouldTerminate(const SparseMatrix &matrix, const std::vector<Index> &vertices,
+                             Index depth) const;
+
+        std::vector<std::pair<Index, Index>> extractEdgesFromSubmatrix(
+            const SparseMatrix &matrix) const;
 
         // Fallback ordering methods
         std::vector<Index> minimumDegreeOrdering(
