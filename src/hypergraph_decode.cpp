@@ -442,4 +442,198 @@ namespace hypergraph_ordering
         return decodeC2PartitionToVertexSeparator(matrix, partition, edge_rows, edge_cols);
     }
 
+    VertexSeparatorResult HypergraphOrdering::decodeC4PartitionToVertexSeparator(
+        const SparseMatrix &matrix,
+        const std::vector<PartitionID> &partition,
+        const std::vector<std::vector<Index>> &all_cliques) const
+    {
+        Timer timer;
+
+        const Index n = matrix.rows();
+        const Index num_cliques = all_cliques.size();
+
+        if (config_.verbose)
+        {
+            std::cout << "Decoding C4 clique-node hypergraph partition..." << std::endl;
+            std::cout << "  Matrix size: " << n << "x" << n << std::endl;
+            std::cout << "  Number of cliques: " << num_cliques << std::endl;
+        }
+
+        // Validate input
+        if (partition.size() != num_cliques)
+        {
+            throw std::runtime_error("Partition size mismatch with number of cliques");
+        }
+
+        // Step 1: Classify cliques by partition
+        std::vector<std::unordered_set<Index>> part_cliques(2);
+        for (Index clique_idx = 0; clique_idx < num_cliques; ++clique_idx)
+        {
+            PartitionID part = partition[clique_idx];
+            if (part == 0)
+            {
+                part_cliques[0].insert(clique_idx);
+            }
+            else if (part == 1)
+            {
+                part_cliques[1].insert(clique_idx);
+            }
+            // Note: Cut cliques might have part > 1, but we ignore them
+            // The net-cut determines the separator, not clique-cut
+        }
+
+        if (config_.verbose)
+        {
+            std::cout << "  Partition 0 cliques: " << part_cliques[0].size() << std::endl;
+            std::cout << "  Partition 1 cliques: " << part_cliques[1].size() << std::endl;
+        }
+
+        // Step 2: For each vertex (net), determine which partitions it connects
+        // A vertex is in the separator if it connects to cliques in both partitions
+        std::vector<std::unordered_set<PartitionID>> vertex_partitions(n);
+
+        for (Index clique_idx = 0; clique_idx < num_cliques; ++clique_idx)
+        {
+            PartitionID part = partition[clique_idx];
+            if (part < 2) // Valid partition (0 or 1)
+            {
+                // Add this partition to all vertices in the clique
+                for (Index vertex : all_cliques[clique_idx])
+                {
+                    vertex_partitions[vertex].insert(part);
+                }
+            }
+        }
+
+        // Step 3: Classify vertices based on partition connectivity
+        // This follows the fundamental theorem:
+        // - Internal net (vertex) connects to cliques in only one partition
+        // - External net (vertex) connects to cliques in multiple partitions
+        std::unordered_set<Index> separator_vertices;
+        std::unordered_set<Index> part0_vertices, part1_vertices;
+        std::unordered_set<Index> isolated_vertices;
+
+        for (Index v = 0; v < n; ++v)
+        {
+            const auto &v_partitions = vertex_partitions[v];
+
+            if (v_partitions.empty())
+            {
+                // Vertex not in any clique (isolated)
+                isolated_vertices.insert(v);
+            }
+            else if (v_partitions.size() == 1)
+            {
+                // Vertex connects to cliques in only one partition (internal net)
+                PartitionID single_part = *(v_partitions.begin());
+                if (single_part == 0)
+                {
+                    part0_vertices.insert(v);
+                }
+                else
+                {
+                    part1_vertices.insert(v);
+                }
+            }
+            else
+            {
+                // Vertex connects to cliques in multiple partitions (external net)
+                // This vertex must be in the separator
+                separator_vertices.insert(v);
+            }
+        }
+
+        if (config_.verbose)
+        {
+            std::cout << "  Initial separator candidates: " << separator_vertices.size() << std::endl;
+            std::cout << "  Initial part 0 vertices: " << part0_vertices.size() << std::endl;
+            std::cout << "  Initial part 1 vertices: " << part1_vertices.size() << std::endl;
+            std::cout << "  Isolated vertices: " << isolated_vertices.size() << std::endl;
+        }
+
+        // Step 4: Handle isolated vertices (assign to smaller part for balance)
+        for (Index iso_v : isolated_vertices)
+        {
+            if (part0_vertices.size() <= part1_vertices.size())
+            {
+                part0_vertices.insert(iso_v);
+            }
+            else
+            {
+                part1_vertices.insert(iso_v);
+            }
+        }
+
+        // Step 5: Ensure no vertex appears in multiple sets
+        for (Index v : separator_vertices)
+        {
+            part0_vertices.erase(v);
+            part1_vertices.erase(v);
+        }
+
+        // Step 6: Build result
+        VertexSeparatorResult result;
+
+        result.separator.assign(separator_vertices.begin(), separator_vertices.end());
+        result.part1.assign(part0_vertices.begin(), part0_vertices.end());
+        result.part2.assign(part1_vertices.begin(), part1_vertices.end());
+
+        // Sort for consistency
+        std::sort(result.separator.begin(), result.separator.end());
+        std::sort(result.part1.begin(), result.part1.end());
+        std::sort(result.part2.begin(), result.part2.end());
+
+        // Step 7: Validate result
+        if (result.separator.size() + result.part1.size() + result.part2.size() != n)
+        {
+            if (config_.verbose)
+            {
+                std::cout << "Warning: Vertex count mismatch in separator result!" << std::endl;
+                std::cout << "  Separator: " << result.separator.size() << std::endl;
+                std::cout << "  Part1: " << result.part1.size() << std::endl;
+                std::cout << "  Part2: " << result.part2.size() << std::endl;
+                std::cout << "  Expected total: " << n << std::endl;
+            }
+        }
+
+        // Check for degenerate partitions
+        if (result.part1.empty() || result.part2.empty())
+        {
+            if (config_.verbose)
+            {
+                std::cout << "Warning: Degenerate partition detected!" << std::endl;
+            }
+
+            // Create a simple balanced partition as fallback
+            result.separator.clear();
+            result.part1.clear();
+            result.part2.clear();
+
+            for (Index v = 0; v < n; ++v)
+            {
+                if (v % 2 == 0)
+                {
+                    result.part1.push_back(v);
+                }
+                else
+                {
+                    result.part2.push_back(v);
+                }
+            }
+        }
+
+        if (config_.verbose)
+        {
+            std::cout << "C4 separator decoding completed:" << std::endl;
+            std::cout << "  Final separator size: " << result.separator.size() << std::endl;
+            std::cout << "  Final part 1 size: " << result.part1.size() << std::endl;
+            std::cout << "  Final part 2 size: " << result.part2.size() << std::endl;
+            std::cout << "  Separator ratio: " << std::fixed << std::setprecision(2)
+                      << (100.0 * result.separator.size() / n) << "%" << std::endl;
+            std::cout << "  Decoding time: " << timer.elapsed() << "s" << std::endl;
+        }
+
+        return result;
+    }
+
 }

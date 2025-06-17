@@ -147,12 +147,13 @@ namespace hypergraph_ordering
         enum CliqueType
         {
             C2_CLIQUES = 2, // 2-cliques (edges)
-            C3_CLIQUES = 3  // 3-cliques (triangles)
+            C3_CLIQUES = 3, // 3-cliques (triangles)
+            C4_CLIQUES = 4  // 4-cliques (tetrahedra)
         };
-        CliqueType clique_type = C2_CLIQUES;
+        CliqueType clique_type = C4_CLIQUES;
 
         // KaHyPar specific settings
-        double imbalance = 0.005;
+        double imbalance = 0.001;
         PartitionID num_blocks = 2;
 
         bool isValid() const;
@@ -207,6 +208,7 @@ namespace hypergraph_ordering
         HypergraphData constructC2CliqueNodeHypergraphParallel(
             const SparseMatrix &matrix) const;
         HypergraphData constructC3CliqueNodeHypergraph(const SparseMatrix &matrix) const;
+        HypergraphData constructC4CliqueNodeHypergraph(const SparseMatrix &matrix) const;
 
         std::vector<PartitionID> partitionHypergraph(const HypergraphData &hg) const;
         VertexSeparatorResult decodePartitionToVertexSeparator(
@@ -214,6 +216,11 @@ namespace hypergraph_ordering
             const std::vector<PartitionID> &partition,
             const std::vector<Index> &edge_rows,
             const std::vector<Index> &edge_cols) const;
+
+        VertexSeparatorResult decodeC4PartitionToVertexSeparator(
+            const SparseMatrix &matrix,
+            const std::vector<PartitionID> &partition,
+            const std::vector<std::vector<Index>> &all_cliques) const;
 
         // Recursive nested dissection
         void recursiveNestedDissection(
@@ -300,6 +307,7 @@ namespace hypergraph_ordering
         // Configuration and state
         OrderingConfig config_;
         mutable Statistics stats_;
+        mutable std::vector<std::vector<Index>> stored_cliques_;
 
         // Timing utilities
         class Timer

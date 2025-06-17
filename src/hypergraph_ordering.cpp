@@ -267,7 +267,7 @@ namespace hypergraph_ordering
             // Extract submatrix and build hypergraph
             std::unordered_map<Index, Index> vertex_map;
             SparseMatrix submatrix = matrix.extractSubmatrix(vertices, vertex_map);
-            auto hg_data = constructC2CliqueNodeHypergraph(submatrix);
+            auto hg_data = constructC4CliqueNodeHypergraph(submatrix);
 
             if (hg_data.num_nodes < 10)
             {
@@ -285,7 +285,7 @@ namespace hypergraph_ordering
                 edge_rows.push_back(edge.first);
                 edge_cols.push_back(edge.second);
             }
-            auto separator_result = decodeC2PartitionToVertexSeparator(submatrix, partition, edge_rows, edge_cols);
+            auto separator_result = decodeC4PartitionToVertexSeparator(submatrix, partition, stored_cliques_);
 
             // Map back to original indices
             std::vector<Index> orig_separator, orig_part1, orig_part2;
@@ -478,19 +478,20 @@ namespace hypergraph_ordering
         return true;
     }
 
-    bool HypergraphOrdering::shouldTerminate(const SparseMatrix &matrix, const std::vector<Index> &vertices,
+    bool HypergraphOrdering::shouldTerminate(const SparseMatrix &matrix,
+                                             const std::vector<Index> &vertices,
                                              Index depth) const
     {
         const Index n = vertices.size();
 
-        // Original paper: continue until internal nets < 200 OR nodes < 100
+        // Literature termination: continue until internal nets < 200 OR nodes < 100
         if (n < 100)
         {
             return true;
         }
 
-        // Count internal nets (edges within the subproblem)
-        Index internal_nets = 0;
+        // Count internal edges more efficiently
+        Index internal_edges = 0;
         std::unordered_set<Index> vertex_set(vertices.begin(), vertices.end());
 
         for (Index v : vertices)
@@ -498,25 +499,15 @@ namespace hypergraph_ordering
             for (Index ptr = matrix.rowPtr()[v]; ptr < matrix.rowPtr()[v + 1]; ++ptr)
             {
                 Index neighbor = matrix.colInd()[ptr];
+                // Count each edge only once and only if both endpoints are in vertex set
                 if (neighbor > v && vertex_set.count(neighbor))
                 {
-                    internal_nets++;
+                    internal_edges++;
                 }
             }
         }
 
-        if (internal_nets < 200)
-        {
-            return true;
-        }
-
-        // // Also check depth as safety
-        // if (depth >= config_.max_recursion_depth)
-        // {
-        //     return true;
-        // }
-
-        return false;
+        return internal_edges < 200;
     }
 
     std::vector<std::pair<Index, Index>> HypergraphOrdering::extractEdgesFromSubmatrix(
