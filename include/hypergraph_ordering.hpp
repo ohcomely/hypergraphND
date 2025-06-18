@@ -15,6 +15,7 @@
 extern "C"
 {
 #include <libkahypar.h>
+#include <amd.h>
 }
 
 namespace hypergraph_ordering
@@ -136,7 +137,7 @@ namespace hypergraph_ordering
      */
     struct OrderingConfig
     {
-        std::string kahypar_config_path = "../cut_kKaHyPar_sea20.ini";
+        std::string kahypar_config_path = "../km1_kKaHyPar_sea20.ini";
         Index max_recursion_depth = 10;
         Index min_subproblem_size = 200;
         Index min_nodes_for_partitioning = 100;
@@ -257,6 +258,33 @@ namespace hypergraph_ordering
         std::vector<Index> exactMinimumDegree(
             const SparseMatrix &matrix,
             const std::vector<Index> &vertices) const;
+
+        std::vector<Index> amdOrderingFull(const SparseMatrix &matrix) const;
+
+        /**
+         * AMD ordering for submatrix defined by vertex subset
+         */
+        std::vector<Index> amdOrdering(
+            const SparseMatrix &matrix,
+            const std::vector<Index> &vertices) const;
+
+        /**
+         * Convert SparseMatrix to AMD format (compressed column storage)
+         */
+        void convertToAMDFormat(
+            const SparseMatrix &matrix,
+            std::vector<SuiteSparse_long> &Ap,
+            std::vector<SuiteSparse_long> &Ai) const;
+
+        /**
+         * Convert submatrix to AMD format
+         */
+        void convertSubmatrixToAMDFormat(
+            const SparseMatrix &matrix,
+            const std::vector<Index> &vertices,
+            std::vector<SuiteSparse_long> &Ap,
+            std::vector<SuiteSparse_long> &Ai,
+            std::unordered_map<Index, SuiteSparse_long> &vertex_map) const;
 
         // Helper functions
         std::vector<Index> remapVertices(

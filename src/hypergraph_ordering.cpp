@@ -485,7 +485,7 @@ namespace hypergraph_ordering
         const Index n = vertices.size();
 
         // Literature termination: continue until internal nets < 200 OR nodes < 100
-        if (n < 100)
+        if (n < 200)
         {
             return true;
         }
